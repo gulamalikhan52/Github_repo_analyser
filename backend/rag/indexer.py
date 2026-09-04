@@ -1,11 +1,15 @@
 from pathlib import Path
 from typing import Any
+import gc
 
 from backend.rag.embeddings import EmbeddingService
 from backend.rag.vector_store import VectorStore
 
 
 INDEX_ROOT = Path("data/indexes")
+
+# Small batch keeps memory usage low on Render's 512 MB instance.
+EMBEDDING_BATCH_SIZE = 8
 
 
 class RepositoryIndexer:
@@ -31,36 +35,80 @@ class RepositoryIndexer:
                 "No chunks were provided for indexing."
             )
 
-        texts = [
-            chunk["content"]
+        valid_chunks = [
+            chunk
             for chunk in chunks
             if chunk.get("content")
         ]
 
-        if not texts:
+        if not valid_chunks:
             raise ValueError(
                 "No valid chunk content found."
             )
 
-        vectors = (
-            self.embedding_service
-            .embed_documents(texts)
-        )
+        total_chunks = len(valid_chunks)
 
-        self.vector_store = VectorStore(
-            dimension=vectors.shape[1]
-        )
+        # Build the FAISS store incrementally.
+        # This avoids creating embeddings for the entire
+        # repository in memory at once.
+        for start in range(
+            0,
+            total_chunks,
+            EMBEDDING_BATCH_SIZE,
+        ):
+            end = min(
+                start + EMBEDDING_BATCH_SIZE,
+                total_chunks,
+            )
 
-        self.vector_store.add_documents(
-            vectors,
-            chunks,
-        )
+            batch_chunks = valid_chunks[start:end]
+
+            batch_texts = [
+                chunk["content"]
+                for chunk in batch_chunks
+            ]
+
+            vectors = (
+                self.embedding_service
+                .embed_documents(batch_texts)
+            )
+
+            if vectors is None or len(vectors) == 0:
+                raise ValueError(
+                    f"Embedding generation returned no vectors "
+                    f"for chunks {start}:{end}."
+                )
+
+            if self.vector_store is None:
+                self.vector_store = VectorStore(
+                    dimension=vectors.shape[1]
+                )
+
+            self.vector_store.add_documents(
+                vectors,
+                batch_chunks,
+            )
+
+            # Release temporary batch memory before
+            # processing the next batch.
+            del batch_texts
+            del batch_chunks
+            del vectors
+
+            gc.collect()
+
+        if self.vector_store is None:
+            raise RuntimeError(
+                "Failed to build the vector store."
+            )
 
         return {
             "vector_store": self.vector_store,
-            "chunks": chunks,
-            "total_chunks": len(chunks),
-            "embedding_dimension": vectors.shape[1],
+            "chunks": valid_chunks,
+            "total_chunks": total_chunks,
+            "embedding_dimension": (
+                self.vector_store.index.d
+            ),
         }
 
     def save(self):
