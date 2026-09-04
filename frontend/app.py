@@ -1,10 +1,14 @@
-
 import hashlib
+import os
 import time
 
 import requests
 import streamlit as st
 
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
 st.set_page_config(
     page_title="AI Repository Intelligence",
@@ -13,231 +17,96 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL = os.getenv(
+    "API_BASE_URL",
+    "http://127.0.0.1:8000",
+).rstrip("/")
 
+
+# ============================================================
+# CUSTOM CSS
+# ============================================================
 
 st.markdown(
     """
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    <style>
+        @import url(
+            'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'
+        );
 
-    .stApp {
-        font-family: 'Inter', sans-serif;
-    }
+        .stApp {
+            font-family: 'Inter', sans-serif;
+        }
 
-    #MainMenu, footer, header {
-        visibility: hidden;
-    }
+        .main-title {
+            font-size: 2.6rem;
+            font-weight: 800;
+            margin-bottom: 0.2rem;
+        }
 
-    .block-container {
-        max-width: 1400px;
-        padding-top: 1.5rem;
-        padding-bottom: 3rem;
-    }
+        .subtitle {
+            font-size: 1rem;
+            opacity: 0.7;
+            margin-bottom: 1.5rem;
+        }
 
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        border-right: 1px solid rgba(128,128,128,.16);
-    }
+        .repo-card {
+            padding: 1.4rem;
+            border-radius: 16px;
+            border: 1px solid rgba(128,128,128,0.25);
+            margin-bottom: 1rem;
+        }
 
-    [data-testid="stSidebar"] > div:first-child {
-        padding-top: 1.5rem;
-    }
+        .source-card {
+            padding: 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(128,128,128,0.22);
+            margin-bottom: 0.7rem;
+        }
 
-    .brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 28px;
-    }
+        .metric-card {
+            padding: 1rem;
+            border-radius: 14px;
+            border: 1px solid rgba(128,128,128,0.22);
+            text-align: center;
+        }
 
-    .brand-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 22px;
-        background: linear-gradient(135deg, #6d5dfc, #9b8cff);
-        box-shadow: 0 8px 24px rgba(109,93,252,.25);
-    }
+        .metric-value {
+            font-size: 1.7rem;
+            font-weight: 800;
+        }
 
-    .brand-title {
-        font-size: 17px;
-        font-weight: 800;
-        line-height: 1.1;
-    }
+        .metric-label {
+            font-size: 0.85rem;
+            opacity: 0.65;
+        }
 
-    .brand-subtitle {
-        font-size: 11px;
-        opacity: .58;
-        margin-top: 3px;
-    }
+        .status-connected {
+            padding: 0.55rem 0.8rem;
+            border-radius: 10px;
+            border: 1px solid rgba(0,180,100,0.35);
+            background: rgba(0,180,100,0.08);
+        }
 
-    .hero {
-        padding: 28px 30px;
-        border-radius: 24px;
-        background:
-            radial-gradient(circle at 90% 10%, rgba(109,93,252,.22), transparent 32%),
-            radial-gradient(circle at 10% 100%, rgba(77,171,247,.13), transparent 30%),
-            rgba(128,128,128,.055);
-        border: 1px solid rgba(128,128,128,.14);
-        margin-bottom: 22px;
-    }
+        .status-error {
+            padding: 0.55rem 0.8rem;
+            border-radius: 10px;
+            border: 1px solid rgba(220,60,60,0.35);
+            background: rgba(220,60,60,0.08);
+        }
 
-    .eyebrow {
-        display: inline-flex;
-        padding: 6px 10px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: .04em;
-        text-transform: uppercase;
-        background: rgba(109,93,252,.12);
-        color: #9b8cff;
-        margin-bottom: 12px;
-    }
-
-    .hero h1 {
-        margin: 0;
-        font-size: clamp(30px, 4vw, 48px);
-        line-height: 1.05;
-        letter-spacing: -0.04em;
-    }
-
-    .hero p {
-        margin: 12px 0 0;
-        max-width: 720px;
-        opacity: .68;
-        font-size: 14px;
-        line-height: 1.65;
-    }
-
-    .metric {
-        padding: 18px 20px;
-        min-height: 112px;
-        border-radius: 18px;
-        border: 1px solid rgba(128,128,128,.14);
-        background: rgba(128,128,128,.045);
-    }
-
-    .metric-label {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: .07em;
-        opacity: .52;
-        font-weight: 700;
-    }
-
-    .metric-value {
-        font-size: 26px;
-        font-weight: 800;
-        margin-top: 9px;
-    }
-
-    .metric-note {
-        font-size: 11px;
-        opacity: .48;
-        margin-top: 3px;
-    }
-
-    .section-title {
-        font-size: 18px;
-        font-weight: 800;
-        margin: 28px 0 12px;
-    }
-
-    .repo-card {
-        border: 1px solid rgba(128,128,128,.14);
-        border-radius: 18px;
-        padding: 18px 20px;
-        background: rgba(128,128,128,.045);
-    }
-
-    .repo-name {
-        font-weight: 800;
-        font-size: 16px;
-    }
-
-    .repo-url {
-        opacity: .52;
-        font-size: 12px;
-        margin-top: 5px;
-        overflow-wrap: anywhere;
-    }
-
-    .stage {
-        padding: 14px 16px;
-        border-radius: 14px;
-        border: 1px solid rgba(128,128,128,.12);
-        background: rgba(128,128,128,.04);
-        font-size: 13px;
-        margin: 10px 0;
-    }
-
-    .chat-shell {
-        border: 1px solid rgba(128,128,128,.14);
-        border-radius: 22px;
-        padding: 18px;
-        background: rgba(128,128,128,.035);
-    }
-
-    .source-card {
-        border: 1px solid rgba(128,128,128,.13);
-        border-radius: 14px;
-        padding: 13px 15px;
-        margin: 8px 0;
-        background: rgba(128,128,128,.035);
-    }
-
-    .source-path {
-        font-size: 12px;
-        font-weight: 700;
-        overflow-wrap: anywhere;
-    }
-
-    .source-meta {
-        font-size: 10px;
-        opacity: .5;
-        margin-top: 4px;
-    }
-
-    .tip {
-        padding: 13px 14px;
-        border-radius: 14px;
-        background: rgba(109,93,252,.08);
-        border: 1px solid rgba(109,93,252,.16);
-        font-size: 12px;
-        line-height: 1.5;
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 56px 20px;
-        border: 1px dashed rgba(128,128,128,.25);
-        border-radius: 22px;
-        opacity: .7;
-    }
-
-    div[data-testid="stButton"] > button {
-        border-radius: 12px;
-        min-height: 42px;
-        font-weight: 700;
-    }
-
-    div[data-testid="stTextInput"] input {
-        border-radius: 12px;
-    }
-
-    .small-muted {
-        font-size: 11px;
-        opacity: .5;
-    }
-</style>
-""",
+        div[data-testid="stChatMessage"] {
+            border-radius: 14px;
+        }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
 
 defaults = {
     "repository_url": "",
@@ -247,357 +116,779 @@ defaults = {
     "messages": [],
     "last_error": None,
 }
+
 for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
 
+# ============================================================
+# HELPERS
+# ============================================================
+
 def repository_key(url: str) -> str:
-    return hashlib.sha256(url.strip().lower().encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(
+        url.strip().lower().encode("utf-8")
+    ).hexdigest()[:16]
 
 
 def api_get(path: str, timeout: int = 20):
-    return requests.get(f"{API_BASE_URL}{path}", timeout=timeout)
+    url = f"{API_BASE_URL}{path}"
+    return requests.get(url, timeout=timeout)
 
 
 def api_post(path: str, payload: dict, timeout: int = 30):
-    return requests.post(f"{API_BASE_URL}{path}", json=payload, timeout=timeout)
+    url = f"{API_BASE_URL}{path}"
+    return requests.post(
+        url,
+        json=payload,
+        timeout=timeout,
+    )
 
 
 def format_number(value):
     if value is None:
         return "—"
+
     try:
         return f"{int(value):,}"
     except (ValueError, TypeError):
         return str(value)
 
 
+def extract_error(response):
+    try:
+        data = response.json()
+
+        if isinstance(data, dict):
+            if "detail" in data:
+                return str(data["detail"])
+
+            if "error" in data:
+                return str(data["error"])
+
+        return response.text
+
+    except Exception:
+        return response.text
+
+
+# ============================================================
+# BACKEND HEALTH CHECK
+# ============================================================
+
+def check_backend():
+    try:
+        response = api_get("/health", timeout=5)
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+            except Exception:
+                data = {}
+
+            return True, data
+
+        return False, f"HTTP {response.status_code}"
+
+    except requests.exceptions.RequestException as exc:
+        return False, str(exc)
+
+
+# ============================================================
+# PREPARE REPOSITORY
+# ============================================================
+
+def prepare_repository(url: str):
+    response = api_post(
+        "/prepare",
+        {
+            "repository_url": url,
+        },
+        timeout=30,
+    )
+
+    if response.status_code not in (200, 201, 202):
+        raise RuntimeError(extract_error(response))
+
+    return response.json()
+
+
+# ============================================================
+# PREPARATION STATUS
+# ============================================================
+
+def get_prepare_status(repository_key_value: str):
+    response = api_get(
+        f"/prepare/status/{repository_key_value}",
+        timeout=20,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(extract_error(response))
+
+    return response.json()
+
+
+# ============================================================
+# ASK REPOSITORY
+# ============================================================
+
+def ask_repository(question: str, top_k: int = 5):
+    response = api_post(
+        "/ask",
+        {
+            "question": question,
+            "top_k": top_k,
+        },
+        timeout=120,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(extract_error(response))
+
+    return response.json()
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
 
 with st.sidebar:
-    st.markdown(
-        """
-        <div class="brand">
-            <div class="brand-icon">🤖</div>
-            <div>
-                <div class="brand-title">Repository AI</div>
-                <div class="brand-subtitle">Code intelligence workspace</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+
+    st.markdown("## 🤖 Repository AI")
+
+    st.caption(
+        "AI-powered GitHub repository analysis"
     )
 
-    st.markdown("### Workspace")
+    st.divider()
 
-    if st.session_state.repo_ready:
-        st.success("Repository ready")
+    connected, health_data = check_backend()
+
+    if connected:
+        st.success("Backend connected")
     else:
-        st.info("No repository loaded")
+        st.error("Backend not connected")
 
-    if st.button("＋ New repository", use_container_width=True):
-        st.session_state.repository_url = ""
-        st.session_state.repository_key = ""
-        st.session_state.repo_info = None
-        st.session_state.repo_ready = False
-        st.session_state.messages = []
-        st.session_state.last_error = None
+        with st.expander("Connection details"):
+            st.code(API_BASE_URL)
+            st.caption(str(health_data))
+
+    st.divider()
+
+    st.markdown("### Backend")
+
+    st.code(
+        API_BASE_URL,
+        language="text",
+    )
+
+    st.divider()
+
+    if st.button(
+        "🔄 Check Backend",
+        use_container_width=True,
+    ):
         st.rerun()
 
-    st.markdown("---")
+    if st.session_state.repo_ready:
 
-    st.markdown(
-        """
-        <div class="tip">
-            <b>💡 Try asking</b><br>
-            • Where is the main application defined?<br>
-            • Explain the project architecture<br>
-            • Where is authentication handled?<br>
-            • Which files implement the API?
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.divider()
 
-    st.markdown("---")
-    st.markdown('<div class="small-muted">FastAPI + FAISS + SentenceTransformers + Groq</div>', unsafe_allow_html=True)
+        if st.button(
+            "🆕 New Repository",
+            use_container_width=True,
+        ):
+            st.session_state.repository_url = ""
+            st.session_state.repository_key = ""
+            st.session_state.repo_info = None
+            st.session_state.repo_ready = False
+            st.session_state.messages = []
+            st.session_state.last_error = None
 
+            st.rerun()
+
+
+# ============================================================
+# HEADER
+# ============================================================
 
 st.markdown(
-    """
-    <div class="hero">
-        <div class="eyebrow">AI-powered codebase exploration</div>
-        <h1>Understand any GitHub repository.</h1>
-        <p>
-            Connect a repository, build a semantic index, and chat with your codebase.
-            Get grounded answers with the exact files used to generate each response.
-        </p>
-    </div>
-    """,
+    '<div class="main-title">AI Repository Intelligence</div>',
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    '<div class="subtitle">'
+    "Understand any accessible GitHub repository using AI-powered "
+    "semantic search and RAG."
+    "</div>",
     unsafe_allow_html=True,
 )
 
 
-left, right = st.columns([5, 1.15])
+# ============================================================
+# REPOSITORY INPUT
+# ============================================================
 
-with left:
-    url = st.text_input(
-        "GitHub repository URL",
+if not st.session_state.repo_ready:
+
+    st.markdown("### 🔗 Analyze a GitHub Repository")
+
+    st.info(
+        "Enter the URL of any accessible GitHub repository."
+    )
+
+    repository_url = st.text_input(
+        "GitHub Repository URL",
         value=st.session_state.repository_url,
         placeholder="https://github.com/owner/repository",
-        label_visibility="visible",
+        label_visibility="collapsed",
     )
 
-with right:
-    analyze = st.button("🚀 Analyze", type="primary", use_container_width=True)
+    analyze_clicked = st.button(
+        "🚀 Analyze Repository",
+        type="primary",
+        use_container_width=True,
+    )
 
-if analyze:
-    clean_url = url.strip()
+    if analyze_clicked:
 
-    if not clean_url:
-        st.error("Please enter a GitHub repository URL.")
-    elif not clean_url.startswith(("https://github.com/", "http://github.com/")):
-        st.error("Please enter a valid GitHub repository URL.")
-    else:
-        st.session_state.repository_url = clean_url
-        st.session_state.repository_key = repository_key(clean_url)
-        st.session_state.repo_ready = False
-        st.session_state.repo_info = None
-        st.session_state.messages = []
+        if not repository_url.strip():
+            st.warning(
+                "Please enter a GitHub repository URL."
+            )
+            st.stop()
+
+        repository_url = repository_url.strip()
+
+        st.session_state.repository_url = repository_url
+        st.session_state.repository_key = repository_key(
+            repository_url
+        )
+        st.session_state.last_error = None
 
         try:
-            response = api_post(
-                "/prepare",
-                {"repository_url": clean_url},
-                timeout=30,
-            )
-            response.raise_for_status()
-            data = response.json()
 
-            status = data.get("status", "processing")
+            with st.status(
+                "Preparing repository...",
+                expanded=True,
+            ) as status:
 
-            if status in ("created", "ready", "loaded"):
-                st.session_state.repo_info = data
-                st.session_state.repo_ready = True
-                st.success("Repository is ready.")
-                st.rerun()
+                st.write("🔍 Checking repository/index...")
 
-            elif status == "processing":
-                status_box = st.empty()
-                stage_box = st.empty()
-                progress = st.progress(0)
-                start = time.time()
+                prepare_data = prepare_repository(
+                    repository_url
+                )
 
-                for attempt in range(600):
-                    try:
-                        status_response = api_get(
-                            f"/prepare/status/{st.session_state.repository_key}",
-                            timeout=20,
-                        )
-                        status_response.raise_for_status()
-                        current = status_response.json()
-                    except requests.RequestException as exc:
-                        status_box.warning(f"Waiting for backend… {exc}")
-                        time.sleep(2)
-                        continue
+                current_status = prepare_data.get(
+                    "status",
+                    "processing",
+                )
 
-                    current_status = current.get("status")
-                    stage = current.get("stage", "")
+                repository_key_value = prepare_data.get(
+                    "repository_key",
+                    st.session_state.repository_key,
+                )
 
-                    elapsed = int(time.time() - start)
-                    progress_value = min((attempt + 1) / 600, 0.99)
-                    progress.progress(progress_value)
+                st.session_state.repository_key = (
+                    repository_key_value
+                )
 
-                    stage_label = stage.replace("_", " ").title() if stage else "Preparing repository"
-                    stage_box.markdown(
-                        f'<div class="stage">⚙️ <b>{stage_label}</b> · {elapsed // 60}m {elapsed % 60:02d}s elapsed</div>',
-                        unsafe_allow_html=True,
+                if current_status in (
+                    "created",
+                    "loaded",
+                    "ready",
+                    "completed",
+                ):
+
+                    st.write(
+                        "✅ Repository is ready."
                     )
 
-                    if current_status in ("created", "ready", "loaded") or stage == "completed":
-                        progress.progress(1.0)
-                        st.session_state.repo_info = current
-                        st.session_state.repo_ready = True
-                        status_box.success("Repository indexed successfully.")
-                        time.sleep(0.5)
-                        st.rerun()
+                    st.session_state.repo_info = (
+                        prepare_data
+                    )
 
-                    if current_status == "failed":
-                        error = current.get("error", "Repository preparation failed.")
-                        st.session_state.last_error = error
-                        status_box.error(error)
-                        break
+                    st.session_state.repo_ready = True
 
-                    status_box.info("🔄 Building your repository intelligence index…")
-                    time.sleep(2)
+                    status.update(
+                        label="Repository ready",
+                        state="complete",
+                    )
 
                 else:
-                    st.error("Preparation is taking longer than expected. Check the backend logs.")
 
-        except requests.RequestException as exc:
-            st.error(
-                "Could not connect to the backend. Start FastAPI first with "
-                "`python -m uvicorn backend.main:app`."
-            )
+                    progress = st.progress(0)
+
+                    max_attempts = 600
+
+                    for attempt in range(max_attempts):
+
+                        time.sleep(2)
+
+                        status_data = get_prepare_status(
+                            repository_key_value
+                        )
+
+                        status_value = status_data.get(
+                            "status",
+                            "processing",
+                        )
+
+                        stage = status_data.get(
+                            "stage",
+                            "",
+                        )
+
+                        if stage:
+                            st.write(
+                                f"⚙️ {stage}"
+                            )
+
+                        if status_value in (
+                            "created",
+                            "loaded",
+                            "ready",
+                            "completed",
+                        ):
+
+                            progress.progress(100)
+
+                            st.session_state.repo_info = (
+                                status_data
+                            )
+
+                            st.session_state.repo_ready = (
+                                True
+                            )
+
+                            status.update(
+                                label="Repository ready",
+                                state="complete",
+                            )
+
+                            break
+
+                        if status_value in (
+                            "failed",
+                            "error",
+                        ):
+
+                            error_message = (
+                                status_data.get(
+                                    "error",
+                                    "Repository preparation failed.",
+                                )
+                            )
+
+                            raise RuntimeError(
+                                error_message
+                            )
+
+                        progress.progress(
+                            min(
+                                int(
+                                    (
+                                        attempt + 1
+                                    )
+                                    / max_attempts
+                                    * 100
+                                ),
+                                99,
+                            )
+                        )
+
+                    else:
+                        raise RuntimeError(
+                            "Repository preparation timed out."
+                        )
+
         except Exception as exc:
-            st.error(f"Unexpected error: {exc}")
+
+            st.session_state.last_error = str(exc)
+
+            st.error(
+                f"❌ Failed to prepare repository: {exc}"
+            )
+
+            st.stop()
+
+        st.rerun()
 
 
+# ============================================================
+# REPOSITORY DASHBOARD
+# ============================================================
 
-if st.session_state.repo_ready and st.session_state.repo_info:
-    info = st.session_state.repo_info
+if st.session_state.repo_ready:
 
-    st.markdown('<div class="section-title">Repository overview</div>', unsafe_allow_html=True)
+    repo_info = st.session_state.repo_info or {}
 
-    repo_name = info.get("repository", st.session_state.repository_url)
-    st.markdown(
-        f"""
-        <div class="repo-card">
-            <div class="repo-name">📦 {repo_name}</div>
-            <div class="repo-url">{st.session_state.repository_url}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    repository_name = repo_info.get(
+        "repository",
+        st.session_state.repository_url,
     )
 
-    st.write("")
+    st.markdown(
+        f"### 📦 {repository_name}"
+    )
 
-    c1, c2, c3, c4 = st.columns(4)
+    st.caption(
+        st.session_state.repository_url
+    )
 
-    with c1:
+    st.divider()
+
+    # --------------------------------------------------------
+    # METRICS
+    # --------------------------------------------------------
+
+    total_files = repo_info.get(
+        "total_files"
+    )
+
+    total_skipped = repo_info.get(
+        "total_skipped"
+    )
+
+    total_chunks = repo_info.get(
+        "total_chunks"
+    )
+
+    embedding_dimension = repo_info.get(
+        "embedding_dimension"
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
         st.markdown(
-            f"""
-            <div class="metric">
-                <div class="metric-label">Files</div>
-                <div class="metric-value">{format_number(info.get("total_files"))}</div>
-                <div class="metric-note">Analyzable files</div>
-            </div>
-            """,
+            '<div class="metric-card">'
+            f'<div class="metric-value">{format_number(total_files)}</div>'
+            '<div class="metric-label">Files indexed</div>'
+            "</div>",
             unsafe_allow_html=True,
         )
 
-    with c2:
+    with col2:
         st.markdown(
-            f"""
-            <div class="metric">
-                <div class="metric-label">Chunks</div>
-                <div class="metric-value">{format_number(info.get("total_chunks"))}</div>
-                <div class="metric-note">Semantic chunks</div>
-            </div>
-            """,
+            '<div class="metric-card">'
+            f'<div class="metric-value">{format_number(total_skipped)}</div>'
+            '<div class="metric-label">Files skipped</div>'
+            "</div>",
             unsafe_allow_html=True,
         )
 
-    with c3:
+    with col3:
         st.markdown(
-            f"""
-            <div class="metric">
-                <div class="metric-label">Embedding</div>
-                <div class="metric-value">{format_number(info.get("embedding_dimension"))}</div>
-                <div class="metric-note">Vector dimensions</div>
-            </div>
-            """,
+            '<div class="metric-card">'
+            f'<div class="metric-value">{format_number(total_chunks)}</div>'
+            '<div class="metric-label">Chunks</div>'
+            "</div>",
             unsafe_allow_html=True,
         )
 
-    with c4:
-        skipped = info.get("total_skipped")
+    with col4:
         st.markdown(
-            f"""
-            <div class="metric">
-                <div class="metric-label">Skipped</div>
-                <div class="metric-value">{format_number(skipped)}</div>
-                <div class="metric-note">Ignored files</div>
-            </div>
-            """,
+            '<div class="metric-card">'
+            f'<div class="metric-value">{format_number(embedding_dimension)}</div>'
+            '<div class="metric-label">Embedding dimension</div>'
+            "</div>",
             unsafe_allow_html=True,
         )
 
-    
-    st.markdown('<div class="section-title">💬 Ask your repository</div>', unsafe_allow_html=True)
+    st.divider()
 
-    if not st.session_state.messages:
+    # --------------------------------------------------------
+    # OVERVIEW
+    # --------------------------------------------------------
+
+    st.markdown("### 🧠 Repository Overview")
+
+    overview_col1, overview_col2 = st.columns(2)
+
+    with overview_col1:
+
         st.markdown(
-            """
-            <div class="empty-state">
-                <div style="font-size:36px">🧠</div>
-                <h3>Start exploring your codebase</h3>
-                <div>Ask about architecture, functions, files, APIs, configuration, or implementation details.</div>
-            </div>
-            """,
+            '<div class="repo-card">',
             unsafe_allow_html=True,
         )
+
+        st.markdown("**Repository**")
+
+        st.write(
+            repository_name
+        )
+
+        st.markdown("**Repository Key**")
+
+        st.code(
+            st.session_state.repository_key
+        )
+
+        st.markdown(
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    with overview_col2:
+
+        st.markdown(
+            '<div class="repo-card">',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("**Status**")
+
+        st.success("Ready for questions")
+
+        st.markdown("**Architecture**")
+
+        st.write(
+            "GitHub → Chunking → Embeddings → FAISS → "
+            "Semantic Retrieval → RAG → LLM"
+        )
+
+        st.markdown(
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # SUGGESTED QUESTIONS
+    # --------------------------------------------------------
+
+    st.markdown("### 💡 Suggested Questions")
+
+    suggestions = [
+        "What is this repository about?",
+        "Explain the project architecture.",
+        "Where is the main application entry point?",
+        "How does the repository handle configuration?",
+        "What are the main modules in this project?",
+        "How do I run this project locally?",
+    ]
+
+    suggestion_cols = st.columns(3)
+
+    for index, question in enumerate(suggestions):
+
+        with suggestion_cols[index % 3]:
+
+            if st.button(
+                question,
+                key=f"suggestion_{index}",
+                use_container_width=True,
+            ):
+                st.session_state.messages.append(
+                    {
+                        "role": "user",
+                        "content": question,
+                    }
+                )
+
+                try:
+
+                    result = ask_repository(
+                        question
+                    )
+
+                    st.session_state.messages.append(
+                        {
+                            "role": "assistant",
+                            "content": result.get(
+                                "answer",
+                                "No answer returned.",
+                            ),
+                            "sources": result.get(
+                                "sources",
+                                [],
+                            ),
+                        }
+                    )
+
+                except Exception as exc:
+
+                    st.session_state.messages.append(
+                        {
+                            "role": "assistant",
+                            "content": (
+                                f"❌ Error: {exc}"
+                            ),
+                        }
+                    )
+
+                st.rerun()
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # CHAT
+    # --------------------------------------------------------
+
+    st.markdown("### 💬 Ask About Your Repository")
 
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
 
-            if message.get("sources"):
-                with st.expander(f"📚 {len(message['sources'])} sources used"):
-                    for index, source in enumerate(message["sources"], start=1):
-                        path = source.get("file_path") or source.get("path") or "Unknown file"
-                        score = source.get("score")
-                        score_text = f" · score {score:.3f}" if isinstance(score, (int, float)) else ""
+        with st.chat_message(
+            message["role"]
+        ):
 
-                        st.markdown(
-                            f"""
-                            <div class="source-card">
-                                <div class="source-path">{index}. 📄 {path}</div>
-                                <div class="source-meta">Retrieved context{score_text}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-
-    question = st.chat_input("Ask something about this repository…")
-
-    if question:
-        question = question.strip()
-
-        if question:
-            st.session_state.messages.append(
-                {"role": "user", "content": question}
+            st.markdown(
+                message["content"]
             )
 
-            with st.chat_message("user"):
-                st.markdown(question)
+            sources = message.get(
+                "sources",
+                [],
+            )
+
+            if sources:
+
+                with st.expander(
+                    f"📚 Sources ({len(sources)})"
+                ):
+
+                    for source in sources:
+
+                        if isinstance(
+                            source,
+                            dict,
+                        ):
+
+                            file_path = source.get(
+                                "file_path",
+                                source.get(
+                                    "path",
+                                    "Unknown file",
+                                ),
+                            )
+
+                            chunk_index = source.get(
+                                "chunk_index",
+                                0,
+                            )
+
+                            st.markdown(
+                                '<div class="source-card">',
+                                unsafe_allow_html=True,
+                            )
+
+                            st.markdown(
+                                f"**📄 {file_path}**"
+                            )
+
+                            st.caption(
+                                f"Chunk: {chunk_index}"
+                            )
+
+                            st.markdown(
+                                "</div>",
+                                unsafe_allow_html=True,
+                            )
+
+                        else:
+
+                            st.write(
+                                str(source)
+                            )
+
+    user_question = st.chat_input(
+        "Ask something about the repository..."
+    )
+
+    if user_question:
+
+        user_question = user_question.strip()
+
+        if user_question:
+
+            st.session_state.messages.append(
+                {
+                    "role": "user",
+                    "content": user_question,
+                }
+            )
 
             with st.chat_message("assistant"):
-                with st.spinner("Searching the codebase…"):
+
+                with st.spinner(
+                    "Searching repository..."
+                ):
+
                     try:
-                        response = api_post(
-                            "/ask",
-                            {
-                                "repository_url": st.session_state.repository_url,
-                                "question": question,
-                                "top_k": 5,
-                            },
-                            timeout=180,
+
+                        result = ask_repository(
+                            user_question
                         )
-                        response.raise_for_status()
-                        result = response.json()
 
-                        answer = result.get("answer", "No answer returned.")
-                        sources = result.get("sources", [])
+                        answer = result.get(
+                            "answer",
+                            "No answer returned.",
+                        )
 
-                        st.markdown(answer)
+                        sources = result.get(
+                            "sources",
+                            [],
+                        )
+
+                        st.markdown(
+                            answer
+                        )
 
                         if sources:
-                            with st.expander(f"📚 {len(sources)} sources used", expanded=True):
-                                for index, source in enumerate(sources, start=1):
-                                    path = source.get("file_path") or source.get("path") or "Unknown file"
-                                    score = source.get("score")
-                                    score_text = f" · score {score:.3f}" if isinstance(score, (int, float)) else ""
 
-                                    st.markdown(
-                                        f"""
-                                        <div class="source-card">
-                                            <div class="source-path">{index}. 📄 {path}</div>
-                                            <div class="source-meta">Retrieved context{score_text}</div>
-                                        </div>
-                                        """,
-                                        unsafe_allow_html=True,
-                                    )
+                            with st.expander(
+                                f"📚 Sources ({len(sources)})"
+                            ):
+
+                                for source in sources:
+
+                                    if isinstance(
+                                        source,
+                                        dict,
+                                    ):
+
+                                        file_path = source.get(
+                                            "file_path",
+                                            source.get(
+                                                "path",
+                                                "Unknown file",
+                                            ),
+                                        )
+
+                                        chunk_index = source.get(
+                                            "chunk_index",
+                                            0,
+                                        )
+
+                                        st.markdown(
+                                            '<div class="source-card">',
+                                            unsafe_allow_html=True,
+                                        )
+
+                                        st.markdown(
+                                            f"**📄 {file_path}**"
+                                        )
+
+                                        st.caption(
+                                            f"Chunk: {chunk_index}"
+                                        )
+
+                                        st.markdown(
+                                            "</div>",
+                                            unsafe_allow_html=True,
+                                        )
+
+                                    else:
+
+                                        st.write(
+                                            str(source)
+                                        )
 
                         st.session_state.messages.append(
                             {
@@ -607,59 +898,21 @@ if st.session_state.repo_ready and st.session_state.repo_info:
                             }
                         )
 
-                    except requests.HTTPError as exc:
-                        try:
-                            detail = response.json().get("detail", str(exc))
-                        except Exception:
-                            detail = str(exc)
-                        st.error(f"Backend error: {detail}")
-                    except requests.RequestException:
-                        st.error("Could not connect to the FastAPI backend.")
                     except Exception as exc:
-                        st.error(f"Unexpected error: {exc}")
 
-else:
-    st.markdown(
-        """
-        <div class="section-title">How it works</div>
-        """,
-        unsafe_allow_html=True,
-    )
+                        error_message = (
+                            f"❌ Failed to get answer: {exc}"
+                        )
 
-    a, b, c = st.columns(3)
+                        st.error(
+                            error_message
+                        )
 
-    with a:
-        st.markdown(
-            """
-            <div class="metric">
-                <div style="font-size:22px">1️⃣</div>
-                <div style="font-weight:800;margin-top:10px">Connect</div>
-                <div class="metric-note">Paste any accessible GitHub repository URL.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                        st.session_state.messages.append(
+                            {
+                                "role": "assistant",
+                                "content": error_message,
+                            }
+                        )
 
-    with b:
-        st.markdown(
-            """
-            <div class="metric">
-                <div style="font-size:22px">2️⃣</div>
-                <div style="font-weight:800;margin-top:10px">Index</div>
-                <div class="metric-note">Files are chunked, embedded and stored in FAISS.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with c:
-        st.markdown(
-            """
-            <div class="metric">
-                <div style="font-size:22px">3️⃣</div>
-                <div style="font-weight:800;margin-top:10px">Ask</div>
-                <div class="metric-note">Chat with the repository using grounded retrieval.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            st.rerun()

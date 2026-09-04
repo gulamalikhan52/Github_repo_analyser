@@ -14,14 +14,12 @@ from backend.services.repository_manager import create_repository_key
 
 
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 
 logger = logging.getLogger(__name__)
-
 
 
 
@@ -33,14 +31,11 @@ app = FastAPI(
 
 
 
-
 rag_service = RAGService()
 
 repository_graph = build_repository_graph(
     rag_service
 )
-
-
 
 
 MAX_BACKGROUND_WORKERS = 2
@@ -55,10 +50,10 @@ prepare_jobs: dict[str, dict[str, Any]] = {}
 
 
 
-
 class PrepareRepositoryRequest(BaseModel):
     repository_url: str = Field(
         ...,
+        min_length=1,
         description="GitHub repository URL",
         examples=[
             "https://github.com/psf/requests"
@@ -69,6 +64,7 @@ class PrepareRepositoryRequest(BaseModel):
 class AskRequest(BaseModel):
     repository_url: str = Field(
         ...,
+        min_length=1,
         description="GitHub repository URL",
         examples=[
             "https://github.com/psf/requests"
@@ -77,6 +73,7 @@ class AskRequest(BaseModel):
 
     question: str = Field(
         ...,
+        min_length=1,
         description="Question about the repository",
         examples=[
             "How does authentication work?"
@@ -89,8 +86,6 @@ class AskRequest(BaseModel):
         le=20,
         description="Number of relevant chunks to retrieve",
     )
-
-
 
 
 def get_index_directory(
@@ -133,6 +128,7 @@ def index_exists(
     )
 
 
+
 def set_job(
     repository_key: str,
     data: dict[str, Any],
@@ -159,7 +155,6 @@ def get_job(
 
 
 
-
 def prepare_repository_background(
     repository_url: str,
     repository_key: str,
@@ -182,8 +177,6 @@ def prepare_repository_background(
 
     try:
 
-     
-
         set_job(
             repository_key,
             {
@@ -198,8 +191,6 @@ def prepare_repository_background(
             "Calling repository preparation..."
         )
 
-       
-
         result = (
             rag_service.prepare_repository(
                 repository_url
@@ -210,8 +201,6 @@ def prepare_repository_background(
             "BACKGROUND COMPLETE: %s",
             repository_url,
         )
-
-       
 
         completed_result = {
             "status": result.get(
@@ -266,7 +255,6 @@ def prepare_repository_background(
 
 
 
-
 @app.get("/")
 def root():
     return {
@@ -275,13 +263,11 @@ def root():
     }
 
 
-
 @app.get("/health")
 def health():
     return {
         "status": "healthy",
     }
-
 
 
 @app.post("/prepare")
@@ -293,14 +279,11 @@ def prepare_repository(
         request.repository_url.strip()
     )
 
-   
-
     if not repository_url:
         raise HTTPException(
             status_code=400,
             detail="Repository URL cannot be empty.",
         )
-
 
     repository_key = (
         create_repository_key(
@@ -308,7 +291,7 @@ def prepare_repository(
         )
     )
 
-
+    
     existing_job = get_job(
         repository_key
     )
@@ -330,7 +313,7 @@ def prepare_repository(
         }:
             return existing_job
 
-        # Failed previously
+        # Failed previously -> retry
         if status == "failed":
 
             processing_job = {
@@ -353,8 +336,7 @@ def prepare_repository(
 
             return processing_job
 
-    
-
+  
     if index_exists(repository_key):
 
         try:
@@ -400,7 +382,6 @@ def prepare_repository(
                 repository_key,
             )
 
-            # Rebuild in background.
             processing_job = {
                 "status": "processing",
                 "repository_key": repository_key,
@@ -426,7 +407,6 @@ def prepare_repository(
             return processing_job
 
    
-
     processing_job = {
         "status": "processing",
         "repository_key": repository_key,
@@ -454,7 +434,6 @@ def prepare_repository(
 
 
 
-
 @app.get(
     "/prepare/status/{repository_key}"
 )
@@ -466,12 +445,10 @@ def prepare_status(
         repository_key
     )
 
-
     if job is not None:
         return job
 
- 
-
+    
     if index_exists(repository_key):
 
         try:
@@ -502,8 +479,6 @@ def prepare_status(
                 ),
             )
 
-    
-
     raise HTTPException(
         status_code=404,
         detail=(
@@ -511,7 +486,6 @@ def prepare_status(
             "not found."
         ),
     )
-
 
 
 
@@ -528,14 +502,12 @@ def ask_repository(
         request.question.strip()
     )
 
-  
-
+   
     if not repository_url:
         raise HTTPException(
             status_code=400,
             detail="Repository URL cannot be empty.",
         )
-
 
     if not question:
         raise HTTPException(
@@ -543,20 +515,16 @@ def ask_repository(
             detail="Question cannot be empty.",
         )
 
-
     repository_key = (
         create_repository_key(
             repository_url
         )
     )
 
-
-
+  
     job = get_job(
         repository_key
     )
-
-
 
     if job is not None:
 
@@ -582,7 +550,6 @@ def ask_repository(
                 },
             )
 
-
         if status == "failed":
 
             raise HTTPException(
@@ -598,8 +565,7 @@ def ask_repository(
                 },
             )
 
-   
-
+    
     if (
         job is None
         and index_exists(repository_key)
@@ -641,8 +607,7 @@ def ask_repository(
                 ),
             )
 
- 
-
+   
     if job is None:
 
         raise HTTPException(
@@ -655,7 +620,6 @@ def ask_repository(
                 "repository_key": repository_key,
             },
         )
-
 
     if job.get("status") not in {
         "loaded",
@@ -675,15 +639,13 @@ def ask_repository(
             },
         )
 
-
+   
     state = {
         "repository_url": repository_url,
         "question": question,
         "top_k": request.top_k,
         "repository_key": repository_key,
     }
-
- 
 
     try:
 
