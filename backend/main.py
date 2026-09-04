@@ -13,14 +13,12 @@ from backend.services.rag_service import RAGService
 from backend.services.repository_manager import create_repository_key
 
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 
 logger = logging.getLogger(__name__)
-
 
 
 app = FastAPI(
@@ -30,18 +28,14 @@ app = FastAPI(
 )
 
 
-
 rag_service = RAGService()
-
-repository_graph = build_repository_graph(
-    rag_service
-)
+repository_graph = build_repository_graph(rag_service)
 
 
-MAX_BACKGROUND_WORKERS = 2
+MAX_BACKGROUND_WORKERS = 1
 
 executor = ThreadPoolExecutor(
-    max_workers=MAX_BACKGROUND_WORKERS
+    max_workers=MAX_BACKGROUND_WORKERS,
 )
 
 job_lock = Lock()
@@ -49,35 +43,25 @@ job_lock = Lock()
 prepare_jobs: dict[str, dict[str, Any]] = {}
 
 
-
 class PrepareRepositoryRequest(BaseModel):
     repository_url: str = Field(
         ...,
-        min_length=1,
         description="GitHub repository URL",
-        examples=[
-            "https://github.com/psf/requests"
-        ],
+        examples=["https://github.com/psf/requests"],
     )
 
 
 class AskRequest(BaseModel):
     repository_url: str = Field(
         ...,
-        min_length=1,
         description="GitHub repository URL",
-        examples=[
-            "https://github.com/psf/requests"
-        ],
+        examples=["https://github.com/psf/requests"],
     )
 
     question: str = Field(
         ...,
-        min_length=1,
         description="Question about the repository",
-        examples=[
-            "How does authentication work?"
-        ],
+        examples=["How does authentication work?"],
     )
 
     top_k: int = Field(
@@ -88,55 +72,23 @@ class AskRequest(BaseModel):
     )
 
 
-def get_index_directory(
-    repository_key: str,
-) -> Path:
-    """
-    Return the directory where a repository index
-    is stored.
-    """
-
-    return (
-        Path("data")
-        / "indexes"
-        / repository_key
-    )
+def get_index_directory(repository_key: str) -> Path:
+    return Path("data") / "indexes" / repository_key
 
 
-def index_exists(
-    repository_key: str,
-) -> bool:
-    """
-    Check whether a complete saved FAISS index exists.
-    """
+def index_exists(repository_key: str) -> bool:
+    directory = get_index_directory(repository_key)
 
-    directory = get_index_directory(
-        repository_key
-    )
+    documents_file = directory / "documents.npy"
+    faiss_file = directory / "index.faiss"
 
-    documents_file = (
-        directory / "documents.npy"
-    )
-
-    faiss_file = (
-        directory / "index.faiss"
-    )
-
-    return (
-        documents_file.exists()
-        and faiss_file.exists()
-    )
-
+    return documents_file.exists() and faiss_file.exists()
 
 
 def set_job(
     repository_key: str,
     data: dict[str, Any],
 ) -> None:
-    """
-    Safely create/update a preparation job.
-    """
-
     with job_lock:
         prepare_jobs[repository_key] = data
 
@@ -144,39 +96,20 @@ def set_job(
 def get_job(
     repository_key: str,
 ) -> dict[str, Any] | None:
-    """
-    Safely retrieve a preparation job.
-    """
-
     with job_lock:
-        return prepare_jobs.get(
-            repository_key
-        )
-
+        return prepare_jobs.get(repository_key)
 
 
 def prepare_repository_background(
     repository_url: str,
     repository_key: str,
 ) -> None:
-    """
-    Prepare a repository in the background.
-
-    This includes:
-        GitHub file collection
-        chunking
-        embeddings
-        FAISS indexing
-        index persistence
-    """
-
     logger.info(
         "BACKGROUND START: %s",
         repository_url,
     )
 
     try:
-
         set_job(
             repository_key,
             {
@@ -187,19 +120,8 @@ def prepare_repository_background(
             },
         )
 
-        logger.info(
-            "Calling repository preparation..."
-        )
-
-        result = (
-            rag_service.prepare_repository(
-                repository_url
-            )
-        )
-
-        logger.info(
-            "BACKGROUND COMPLETE: %s",
-            repository_url,
+        result = rag_service.prepare_repository(
+            repository_url
         )
 
         completed_result = {
@@ -235,8 +157,12 @@ def prepare_repository_background(
             completed_result,
         )
 
-    except Exception as exc:
+        logger.info(
+            "BACKGROUND COMPLETE: %s",
+            repository_url,
+        )
 
+    except Exception as exc:
         logger.exception(
             "BACKGROUND FAILED: %s",
             repository_url,
@@ -252,7 +178,6 @@ def prepare_repository_background(
                 "error": str(exc),
             },
         )
-
 
 
 @app.get("/")
@@ -275,9 +200,7 @@ def prepare_repository(
     request: PrepareRepositoryRequest,
 ) -> dict[str, Any]:
 
-    repository_url = (
-        request.repository_url.strip()
-    )
+    repository_url = request.repository_url.strip()
 
     if not repository_url:
         raise HTTPException(
@@ -285,37 +208,22 @@ def prepare_repository(
             detail="Repository URL cannot be empty.",
         )
 
-    repository_key = (
-        create_repository_key(
-            repository_url
-        )
+    repository_key = create_repository_key(
+        repository_url
     )
 
-    
-    existing_job = get_job(
-        repository_key
-    )
+    existing_job = get_job(repository_key)
 
     if existing_job is not None:
+        status = existing_job.get("status")
 
-        status = existing_job.get(
-            "status"
-        )
-
-        # Already processing
         if status == "processing":
             return existing_job
 
-        # Already ready
-        if status in {
-            "loaded",
-            "created",
-        }:
+        if status in {"loaded", "created"}:
             return existing_job
 
-        # Failed previously -> retry
         if status == "failed":
-
             processing_job = {
                 "status": "processing",
                 "repository_key": repository_key,
@@ -336,23 +244,14 @@ def prepare_repository(
 
             return processing_job
 
-  
     if index_exists(repository_key):
-
         try:
-
-            logger.info(
-                "Existing index found: %s",
-                repository_key,
-            )
-
             indexer = RepositoryIndexer(
                 repository_key
             )
 
             indexer.load()
 
-            # Attach loaded index to current RAG service.
             rag_service.repository_manager.indexer = (
                 indexer
             )
@@ -376,7 +275,6 @@ def prepare_repository(
             return result
 
         except Exception as exc:
-
             logger.exception(
                 "Existing index could not be loaded: %s",
                 repository_key,
@@ -406,7 +304,6 @@ def prepare_repository(
 
             return processing_job
 
-   
     processing_job = {
         "status": "processing",
         "repository_key": repository_key,
@@ -419,11 +316,6 @@ def prepare_repository(
         processing_job,
     )
 
-    logger.info(
-        "Submitting repository to background worker: %s",
-        repository_url,
-    )
-
     executor.submit(
         prepare_repository_background,
         repository_url,
@@ -433,26 +325,18 @@ def prepare_repository(
     return processing_job
 
 
-
-@app.get(
-    "/prepare/status/{repository_key}"
-)
+@app.get("/prepare/status/{repository_key}")
 def prepare_status(
     repository_key: str,
 ) -> dict[str, Any]:
 
-    job = get_job(
-        repository_key
-    )
+    job = get_job(repository_key)
 
     if job is not None:
         return job
 
-    
     if index_exists(repository_key):
-
         try:
-
             indexer = RepositoryIndexer(
                 repository_key
             )
@@ -470,7 +354,6 @@ def prepare_status(
             }
 
         except Exception as exc:
-
             raise HTTPException(
                 status_code=500,
                 detail=(
@@ -481,12 +364,8 @@ def prepare_status(
 
     raise HTTPException(
         status_code=404,
-        detail=(
-            "Repository preparation job "
-            "not found."
-        ),
+        detail="Repository preparation job not found.",
     )
-
 
 
 @app.post("/ask")
@@ -494,15 +373,9 @@ def ask_repository(
     request: AskRequest,
 ) -> dict[str, Any]:
 
-    repository_url = (
-        request.repository_url.strip()
-    )
+    repository_url = request.repository_url.strip()
+    question = request.question.strip()
 
-    question = (
-        request.question.strip()
-    )
-
-   
     if not repository_url:
         raise HTTPException(
             status_code=400,
@@ -515,25 +388,16 @@ def ask_repository(
             detail="Question cannot be empty.",
         )
 
-    repository_key = (
-        create_repository_key(
-            repository_url
-        )
+    repository_key = create_repository_key(
+        repository_url
     )
 
-  
-    job = get_job(
-        repository_key
-    )
+    job = get_job(repository_key)
 
     if job is not None:
-
-        status = job.get(
-            "status"
-        )
+        status = job.get("status")
 
         if status == "processing":
-
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -544,35 +408,22 @@ def ask_repository(
                     ),
                     "repository_key": repository_key,
                     "status": "processing",
-                    "stage": job.get(
-                        "stage"
-                    ),
+                    "stage": job.get("stage"),
                 },
             )
 
         if status == "failed":
-
             raise HTTPException(
                 status_code=500,
                 detail={
-                    "message": (
-                        "Repository preparation failed."
-                    ),
+                    "message": "Repository preparation failed.",
                     "repository_key": repository_key,
-                    "error": job.get(
-                        "error"
-                    ),
+                    "error": job.get("error"),
                 },
             )
 
-    
-    if (
-        job is None
-        and index_exists(repository_key)
-    ):
-
+    if job is None and index_exists(repository_key):
         try:
-
             indexer = RepositoryIndexer(
                 repository_key
             )
@@ -598,7 +449,6 @@ def ask_repository(
             )
 
         except Exception as exc:
-
             raise HTTPException(
                 status_code=500,
                 detail=(
@@ -607,9 +457,7 @@ def ask_repository(
                 ),
             )
 
-   
     if job is None:
-
         raise HTTPException(
             status_code=409,
             detail={
@@ -625,21 +473,15 @@ def ask_repository(
         "loaded",
         "created",
     }:
-
         raise HTTPException(
             status_code=409,
             detail={
-                "message": (
-                    "Repository is not ready."
-                ),
+                "message": "Repository is not ready.",
                 "repository_key": repository_key,
-                "status": job.get(
-                    "status"
-                ),
+                "status": job.get("status"),
             },
         )
 
-   
     state = {
         "repository_url": repository_url,
         "question": question,
@@ -648,12 +490,7 @@ def ask_repository(
     }
 
     try:
-
-        result = (
-            repository_graph.invoke(
-                state
-            )
-        )
+        result = repository_graph.invoke(state)
 
         search_results = result.get(
             "search_results",
@@ -676,7 +513,6 @@ def ask_repository(
         }
 
     except Exception as exc:
-
         logger.exception(
             "Repository question failed."
         )

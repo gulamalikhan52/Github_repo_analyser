@@ -4,11 +4,17 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV TOKENIZERS_PARALLELISM=false
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
 
 COPY requirements-docker.txt .
 
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 \
-    && pip install --no-cache-dir -r requirements-docker.txt
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.14.0 \
+    && pip install --no-cache-dir \
+    -r requirements-docker.txt
 
 COPY backend ./backend
 COPY data ./data
