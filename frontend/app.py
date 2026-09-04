@@ -6,10 +6,6 @@ import requests
 import streamlit as st
 
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
 st.set_page_config(
     page_title="AI Repository Intelligence",
     page_icon="🤖",
@@ -23,9 +19,6 @@ API_BASE_URL = os.getenv(
 ).rstrip("/")
 
 
-# ============================================================
-# CUSTOM CSS
-# ============================================================
 
 st.markdown(
     """
@@ -104,10 +97,6 @@ st.markdown(
 )
 
 
-# ============================================================
-# SESSION STATE
-# ============================================================
-
 defaults = {
     "repository_url": "",
     "repository_key": "",
@@ -121,10 +110,6 @@ for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-
-# ============================================================
-# HELPERS
-# ============================================================
 
 def repository_key(url: str) -> str:
     return hashlib.sha256(
@@ -172,11 +157,6 @@ def extract_error(response):
     except Exception:
         return response.text
 
-
-# ============================================================
-# BACKEND HEALTH CHECK
-# ============================================================
-
 def check_backend():
     try:
         response = api_get("/health", timeout=5)
@@ -195,10 +175,6 @@ def check_backend():
         return False, str(exc)
 
 
-# ============================================================
-# PREPARE REPOSITORY
-# ============================================================
-
 def prepare_repository(url: str):
     response = api_post(
         "/prepare",
@@ -213,11 +189,6 @@ def prepare_repository(url: str):
 
     return response.json()
 
-
-# ============================================================
-# PREPARATION STATUS
-# ============================================================
-
 def get_prepare_status(repository_key_value: str):
     response = api_get(
         f"/prepare/status/{repository_key_value}",
@@ -230,15 +201,20 @@ def get_prepare_status(repository_key_value: str):
     return response.json()
 
 
-# ============================================================
-# ASK REPOSITORY
-# ============================================================
 
 def ask_repository(question: str, top_k: int = 5):
+    repository_url = st.session_state.get("repository_url", "").strip()
+
+    if not repository_url:
+        raise RuntimeError(
+            "No repository is selected. Please analyze a repository first."
+        )
+
     response = api_post(
         "/ask",
         {
-            "question": question,
+            "repository_url": repository_url,
+            "question": question.strip(),
             "top_k": top_k,
         },
         timeout=120,
@@ -249,10 +225,6 @@ def ask_repository(question: str, top_k: int = 5):
 
     return response.json()
 
-
-# ============================================================
-# SIDEBAR
-# ============================================================
 
 with st.sidebar:
 
@@ -310,10 +282,6 @@ with st.sidebar:
             st.rerun()
 
 
-# ============================================================
-# HEADER
-# ============================================================
-
 st.markdown(
     '<div class="main-title">AI Repository Intelligence</div>',
     unsafe_allow_html=True,
@@ -327,10 +295,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
-# ============================================================
-# REPOSITORY INPUT
-# ============================================================
 
 if not st.session_state.repo_ready:
 
@@ -518,10 +482,6 @@ if not st.session_state.repo_ready:
         st.rerun()
 
 
-# ============================================================
-# REPOSITORY DASHBOARD
-# ============================================================
-
 if st.session_state.repo_ready:
 
     repo_info = st.session_state.repo_info or {}
@@ -540,10 +500,6 @@ if st.session_state.repo_ready:
     )
 
     st.divider()
-
-    # --------------------------------------------------------
-    # METRICS
-    # --------------------------------------------------------
 
     total_files = repo_info.get(
         "total_files"
@@ -601,9 +557,6 @@ if st.session_state.repo_ready:
 
     st.divider()
 
-    # --------------------------------------------------------
-    # OVERVIEW
-    # --------------------------------------------------------
 
     st.markdown("### 🧠 Repository Overview")
 
@@ -657,10 +610,6 @@ if st.session_state.repo_ready:
         )
 
     st.divider()
-
-    # --------------------------------------------------------
-    # SUGGESTED QUESTIONS
-    # --------------------------------------------------------
 
     st.markdown("### 💡 Suggested Questions")
 
@@ -725,10 +674,6 @@ if st.session_state.repo_ready:
                 st.rerun()
 
     st.divider()
-
-    # --------------------------------------------------------
-    # CHAT
-    # --------------------------------------------------------
 
     st.markdown("### 💬 Ask About Your Repository")
 
