@@ -8,7 +8,6 @@ from backend.rag.vector_store import VectorStore
 
 INDEX_ROOT = Path("data/indexes")
 
-# Small batch keeps memory usage low on Render's 512 MB instance.
 EMBEDDING_BATCH_SIZE = 8
 
 
@@ -38,7 +37,8 @@ class RepositoryIndexer:
         valid_chunks = [
             chunk
             for chunk in chunks
-            if chunk.get("content")
+            if isinstance(chunk, dict)
+            and chunk.get("content")
         ]
 
         if not valid_chunks:
@@ -48,9 +48,6 @@ class RepositoryIndexer:
 
         total_chunks = len(valid_chunks)
 
-        # Build the FAISS store incrementally.
-        # This avoids creating embeddings for the entire
-        # repository in memory at once.
         for start in range(
             0,
             total_chunks,
@@ -68,15 +65,21 @@ class RepositoryIndexer:
                 for chunk in batch_chunks
             ]
 
-            vectors = (
-                self.embedding_service
-                .embed_documents(batch_texts)
+            vectors = self.embedding_service.embed_documents(
+                batch_texts
             )
 
             if vectors is None or len(vectors) == 0:
                 raise ValueError(
                     f"Embedding generation returned no vectors "
                     f"for chunks {start}:{end}."
+                )
+
+            if len(vectors) != len(batch_chunks):
+                raise ValueError(
+                    f"Embedding count mismatch: "
+                    f"expected {len(batch_chunks)}, "
+                    f"got {len(vectors)}."
                 )
 
             if self.vector_store is None:
@@ -89,11 +92,9 @@ class RepositoryIndexer:
                 batch_chunks,
             )
 
-            # Release temporary batch memory before
-            # processing the next batch.
             del batch_texts
-            del batch_chunks
             del vectors
+            del batch_chunks
 
             gc.collect()
 
@@ -104,11 +105,8 @@ class RepositoryIndexer:
 
         return {
             "vector_store": self.vector_store,
-            "chunks": valid_chunks,
             "total_chunks": total_chunks,
-            "embedding_dimension": (
-                self.vector_store.index.d
-            ),
+            "embedding_dimension": self.vector_store.index.d,
         }
 
     def save(self):
@@ -126,9 +124,7 @@ class RepositoryIndexer:
                 "repository_key is required for persistence."
             )
 
-        directory = (
-            INDEX_ROOT / self.repository_key
-        )
+        directory = INDEX_ROOT / self.repository_key
 
         self.vector_store.save(directory)
 
@@ -144,9 +140,7 @@ class RepositoryIndexer:
                 "repository_key is required for loading."
             )
 
-        directory = (
-            INDEX_ROOT / self.repository_key
-        )
+        directory = INDEX_ROOT / self.repository_key
 
         self.vector_store = VectorStore.load(
             directory
@@ -170,9 +164,8 @@ class RepositoryIndexer:
                 "Search query cannot be empty."
             )
 
-        query_vector = (
-            self.embedding_service
-            .embed_query(query)
+        query_vector = self.embedding_service.embed_query(
+            query
         )
 
         return self.vector_store.search(

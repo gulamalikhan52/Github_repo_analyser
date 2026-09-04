@@ -1,20 +1,20 @@
 import os
 from typing import Any
 
-
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 
-MODEL_NAME = "all-MiniLM-L6-v2"
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_BATCH_SIZE = 8
 
 
 class EmbeddingService:
     """
-    Generate semantic embeddings for repository chunks.
+    Lightweight embedding service using FastEmbed/ONNX Runtime.
 
-    The embedding model is loaded only when an embedding operation
-    is actually requested.
+    FastEmbed avoids PyTorch/SentenceTransformer runtime overhead,
+    which is important for low-memory deployment environments.
     """
 
     _model: Any = None
@@ -22,33 +22,15 @@ class EmbeddingService:
     @classmethod
     def _get_model(cls):
         """
-        Lazily load SentenceTransformer.
-
-        Important:
-        SentenceTransformer is imported inside this method so that
-        PyTorch and the ML stack are NOT loaded during FastAPI startup.
+        Lazily load the FastEmbed model.
         """
 
         if cls._model is None:
-            
-            from sentence_transformers import SentenceTransformer
+            from fastembed import TextEmbedding
 
-           
-            try:
-                import torch
-
-                torch.set_num_threads(1)
-
-                if hasattr(torch, "set_num_interop_threads"):
-                    torch.set_num_interop_threads(1)
-
-            except Exception:
-               
-                pass
-
-            cls._model = SentenceTransformer(
-                MODEL_NAME,
-                device="cpu",
+            cls._model = TextEmbedding(
+                model_name=MODEL_NAME,
+                threads=1,
             )
 
         return cls._model
@@ -56,27 +38,18 @@ class EmbeddingService:
     @classmethod
     def clear_model(cls):
         """
-        Release the embedding model from memory.
-
-        Normally the singleton should remain loaded because repeatedly
-        loading the model is expensive. This method is available for
-        controlled memory cleanup if required.
+        Release the embedding model reference.
         """
 
         cls._model = None
 
-        try:
-            import torch
-
-            if hasattr(torch, "cuda"):
-                torch.cuda.empty_cache()
-
-        except Exception:
-            pass
-
     def embed_documents(self, texts: list[str]):
         """
-        Generate embeddings for multiple documents.
+        Generate normalized document embeddings.
+
+        Returns:
+            numpy.ndarray with shape:
+            (number_of_documents, 384)
         """
 
         if not texts:
@@ -93,17 +66,53 @@ class EmbeddingService:
 
         model = self._get_model()
 
-        return model.encode(
-            cleaned_texts,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-            batch_size=16,
-            show_progress_bar=False,
+        import numpy as np
+
+        
+        vectors = []
+
+        for start in range(0, len(cleaned_texts), EMBEDDING_BATCH_SIZE):
+            batch_texts = cleaned_texts[
+                start:start + EMBEDDING_BATCH_SIZE
+            ]
+
+            batch_embeddings = model.embed(
+                batch_texts,
+                batch_size=EMBEDDING_BATCH_SIZE,
+            )
+
+            batch_vectors = np.asarray(
+                list(batch_embeddings),
+                dtype=np.float32,
+            )
+
+            if batch_vectors.size == 0:
+                continue
+
+            vectors.append(batch_vectors)
+
+        if not vectors:
+            return []
+
+        vectors = np.vstack(vectors).astype(
+            np.float32,
+            copy=False,
         )
+
+        # Normalize for cosine/dot-product similarity.
+        norms = np.linalg.norm(
+            vectors,
+            axis=1,
+            keepdims=True,
+        )
+
+        vectors /= np.maximum(norms, 1e-12)
+
+        return vectors
 
     def embed_query(self, query: str):
         """
-        Generate an embedding for a search query.
+        Generate a normalized query embedding.
         """
 
         if not query or not query.strip():
@@ -111,10 +120,23 @@ class EmbeddingService:
 
         model = self._get_model()
 
-        return model.encode(
+        import numpy as np
+
+        embeddings = model.embed(
             [query.strip()],
-            convert_to_numpy=True,
-            normalize_embeddings=True,
             batch_size=1,
-            show_progress_bar=False,
-        )[0]
+        )
+
+        vector = next(iter(embeddings))
+
+        vector = np.asarray(
+            vector,
+            dtype=np.float32,
+        )
+
+        norm = np.linalg.norm(vector)
+
+        if norm > 0:
+            vector /= norm
+
+        return vector
